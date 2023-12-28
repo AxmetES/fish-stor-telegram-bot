@@ -1,14 +1,18 @@
 import requests
 
+from urllib.parse import urljoin
+
 from config import settings
 
 s = requests.Session()
 s.headers.update({"Authorization": f"Bearer {settings.API_TOKEN}"})
-main_url = "http://localhost:1337"
+main_url = settings.MAIN_URL
 
 
 def get_or_create_user(chat_id, users_reply, username):
-    user_ = get_api_handler("get", f"/api/users?filters[chat_id][$eq]={chat_id}")
+    data = {f'filters[{chat_id}][$eq]': '{chat_id}'}
+
+    user_ = get_api_handler("get", f"/api/users", data=data)
     if user_:
         return user_[0]
     else:
@@ -19,8 +23,7 @@ def get_or_create_user(chat_id, users_reply, username):
             "role": 2,
             "password": "123456",
         }
-        user_ = get_api_handler("post", "/api/users", data=data)
-    return user_
+        return get_api_handler("post", "/api/users", data=data)
 
 
 def get_products():
@@ -32,8 +35,10 @@ def get_product(query):
 
 
 def get_picture(query):
-    pic = get_api_handler("get", f"/api/products/{query}?populate=picture")
-    return pic
+    payload = {
+        'populate': 'picture'
+    }
+    return get_api_handler("get", f'/api/products/{query}', params=payload)
 
 
 def create_order(query):
@@ -42,8 +47,8 @@ def create_order(query):
 
 
 def get_cart(chat_id):
-    cart = get_api_handler("get", f"/api/carts?filters[chat_id][$eq]={chat_id}")
-    return cart
+    data = {f'filters[{chat_id}][$eq]': chat_id}
+    return get_api_handler("get", f"/api/carts", data=data)
 
 
 def get_or_create_cart(chat_id, order):
@@ -55,15 +60,14 @@ def get_or_create_cart(chat_id, order):
                 "orders": {"connect": [order["data"]["id"]]},
             }
         }
-        cart = get_api_handler("post", "/api/carts", data=data)
+        return get_api_handler("post", "/api/carts", data=data)
     else:
         data = {
             "data": {
                 "orders": {"connect": [order["data"]["id"]]},
             }
         }
-        cart = get_api_handler("put", f'/api/carts/{cart["data"][0]["id"]}', data=data)
-    return cart
+        return get_api_handler("put", f'/api/carts/{cart["data"][0]["id"]}', data=data)
 
 
 def get_orders(chat_id):
@@ -82,25 +86,20 @@ def del_order(id_):
 def add_user_to_cart(chat_id, users_reply, username):
     user_ = get_or_create_user(chat_id, users_reply, username)
     cart = get_cart(chat_id)
-    print(cart["data"][0]["id"])
     data = {
         "data": {
             "users_permissions_user": user_["id"],
         }
     }
-    cart = get_api_handler("put", f'/api/carts/{cart["data"][0]["id"]}', data=data)
-    return cart
+    return get_api_handler("put", f'/api/carts/{cart["data"][0]["id"]}', data=data)
 
 
-def get_api_handler(method, url, data=None):
+def get_api_handler(method, url, data=None, params=None):
     methods = {"post": s.post, "get": s.get, "put": s.put, "del": s.delete}
-    r = methods[method](url=main_url + url, json=data)
+    request_url = urljoin(main_url, url)
+    r = methods[method](url=request_url, json=data, params=params)
+    r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
         return r.json()
     return r
-
-
-if __name__ == "__main__":
-    # user = get_or_create_user("6416664703", "fraktsia@gmail.com", "yerkin_as")
-    add_user_to_cart("6416664703", "fraktsia@gmail.com", "yerkin_as")

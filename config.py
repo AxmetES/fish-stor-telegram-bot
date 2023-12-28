@@ -7,10 +7,11 @@ env.read_env()
 class Settings:
     BOT_TOKEN = env('BOT_TOKEN')
     API_TOKEN = env('API_TOKEN')
+    MAIN_URL = env('MAIN_URL')
 
-    DATABASE_PASSWORD = env('DATABASE_PASSWORD')
-    DATABASE_HOST = env('DATABASE_HOST')
-    DATABASE_PORT = env('DATABASE_PORT')
+    # DATABASE_PASSWORD = env('DATABASE_PASSWORD')
+    # DATABASE_HOST = env('DATABASE_HOST')
+    # DATABASE_PORT = env('DATABASE_PORT')
 
 
 settings = Settings()
