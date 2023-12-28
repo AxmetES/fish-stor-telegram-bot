@@ -1,4 +1,6 @@
 import logging
+from urllib.parse import urljoin
+
 import redis
 from io import BytesIO
 
@@ -19,22 +21,30 @@ _database = None
 logger = logging.getLogger(__name__)
 
 
-def start(update, context):
-    return "HANDLE_MENU"
-
-
-def handle_menu(update, context):
+def get_chat_id_message_id(update, context):
     if update.message:
         chat_id = update.message.chat.id
         message_id = update.message.message_id
     else:
         chat_id = update.callback_query.message.chat.id
         message_id = update.callback_query.message.message_id
+    return chat_id, message_id
+
+
+def start(update, context):
+    return "HANDLE_MENU"
+
+
+def handle_menu(update, context):
+    chat_id, message_id = get_chat_id_message_id(update, context)
+    if update.callback_query:
         query = update.callback_query.data
         if query == "/go_cart":
             return handle_cart(update, context)
         if query == '/pay':
             return handle_pay(update, context)
+        if query == '/del_products':
+            return handle_empty_cart(update, context)
     products = handlers.get_products()
     keyboard = [
         [InlineKeyboardButton(
@@ -61,8 +71,7 @@ def handle_menu(update, context):
 
 
 def handle_description(update, context):
-    chat_id = update.callback_query.message.chat.id
-    message_id = update.callback_query.message.message_id
+    chat_id, message_id = get_chat_id_message_id(update, context)
     query = update.callback_query.data
     if query == '/go_cart':
         return handle_cart(update, context)
@@ -70,7 +79,9 @@ def handle_description(update, context):
         return handle_empty_cart(update, context)
     pic = handlers.get_picture(query)
     pic_url = pic["data"]["attributes"]["picture"]['data'][0]['attributes']['url']
-    response = handlers.get_api_handler("get", pic_url)
+    request_url = urljoin(handlers.main_url, pic_url)
+    response = handlers.s.get(url=request_url)
+    response.raise_for_status()
     image_data = BytesIO(response.content)
 
     product = handlers.get_product(query)
@@ -99,11 +110,9 @@ def handle_description(update, context):
 
 
 def handle_add_to_cart(update, context):
-    query = update.callback_query
-    chat_id = update.callback_query.message.chat_id
-    data = query.data
-    message_id = update.callback_query.message.message_id
-
+    chat_id, message_id = get_chat_id_message_id(update, context)
+    if update.callback_query:
+        data = update.callback_query.data
     order = handlers.create_order(data)
     product = handlers.get_product(data)
     cart = handlers.get_or_create_cart(str(chat_id), order)
@@ -113,12 +122,11 @@ def handle_add_to_cart(update, context):
     context.bot.delete_message(
         chat_id=chat_id,
         message_id=message_id)
-    return "HANDLE_CART"
+    return handle_menu(update, context)
 
 
 def handle_cart(update, context):
-    chat_id = update.callback_query.message.chat_id
-    message_id = update.callback_query.message.message_id
+    chat_id, message_id = get_chat_id_message_id(update, context)
     query = update.callback_query.data
     if query.isdigit():
         return handle_add_to_cart(update, context)
@@ -153,9 +161,7 @@ def handle_cart(update, context):
 
 
 def handle_empty_cart(update, context):
-    chat_id = update.callback_query.message.chat_id
-    message_id = update.callback_query.message.message_id
-
+    chat_id, message_id = get_chat_id_message_id(update, context)
     orders = handlers.get_orders(chat_id)
     for order in orders:
         handlers.del_order(order["id"])
@@ -164,7 +170,6 @@ def handle_empty_cart(update, context):
             "В меню",
             callback_data="/back_to_menu")]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     context.bot.send_message(
         chat_id=chat_id,
         text="Корзина пуста",
@@ -176,8 +181,7 @@ def handle_empty_cart(update, context):
 
 
 def handle_pay(update, context):
-    chat_id = update.callback_query.message.chat_id
-    message_id = update.callback_query.message.message_id
+    chat_id, message_id = get_chat_id_message_id(update, context)
     context.bot.send_message(
         chat_id=chat_id,
         text="Отправьте свою почту для оплаты.")
@@ -188,24 +192,18 @@ def handle_pay(update, context):
 
 
 def handle_email(update, context):
-    try:
-        chat_id = str(update.message.chat_id)
-        message_id = update.message.message_id
-        username = update.effective_user.username
-        users_reply = update.message.text
-        cart = handlers.add_user_to_cart(
-            chat_id,
-            users_reply,
-            username)
-        update.message.reply_text("Пользователь сохранен в CMS.")
-        context.bot.delete_message(
-            chat_id=chat_id,
-            message_id=message_id)
-    except Exception as err:
-        logger.exception(err)
-        update.message.reply_text("something wrong.")
-    finally:
-        return "HANDLE_MENU"
+    chat_id, message_id = get_chat_id_message_id(update, context)
+    username = update.effective_user.username
+    users_reply = update.message.text
+    cart = handlers.add_user_to_cart(
+        chat_id,
+        users_reply,
+        username)
+    update.message.reply_text("Пользователь сохранен в CMS.")
+    context.bot.delete_message(
+        chat_id=chat_id,
+        message_id=message_id)
+    return handle_empty_cart(update, context)
 
 
 def handle_users_reply(update, context):
@@ -236,6 +234,7 @@ def handle_users_reply(update, context):
             context)
         db.set(chat_id, next_state)
     except Exception as err:
+        print(err)
         logger.exception(err)
 
 

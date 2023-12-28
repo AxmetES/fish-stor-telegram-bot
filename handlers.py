@@ -11,10 +11,11 @@ main_url = settings.MAIN_URL
 
 def get_or_create_user(chat_id, users_reply, username):
     data = {f'filters[{chat_id}][$eq]': '{chat_id}'}
-
-    user_ = get_api_handler("get", f"/api/users", data=data)
-    if user_:
-        return user_[0]
+    request_url = urljoin(main_url, f"/api/users")
+    r = s.get(url=request_url, json=data)
+    r.raise_for_status()
+    if r:
+        return r.json()[0]
     else:
         data = {
             "username": username,
@@ -23,32 +24,68 @@ def get_or_create_user(chat_id, users_reply, username):
             "role": 2,
             "password": "123456",
         }
-        return get_api_handler("post", "/api/users", data=data)
+        request_url = urljoin(main_url, "/api/users")
+        r = s.post(url=request_url, json=data)
+        r.raise_for_status()
+    content_type = r.headers.get("Content-Type")
+    if "application/json" in content_type:
+        return r.json()
+    return r
 
 
 def get_products():
-    return get_api_handler("get", "/api/products")
+    request_url = urljoin(main_url, "/api/products")
+    r = s.get(url=request_url)
+    r.raise_for_status()
+    content_type = r.headers.get("Content-Type")
+    if "application/json" in content_type:
+        return r.json()
+    return r
 
 
 def get_product(query):
-    return get_api_handler("get", f"/api/products/{query}")
+    request_url = urljoin(main_url, f"/api/products/{query}")
+    r = s.get(url=request_url)
+    r.raise_for_status()
+    content_type = r.headers.get("Content-Type")
+    if "application/json" in content_type:
+        return r.json()
+    return r
 
 
 def get_picture(query):
     payload = {
         'populate': 'picture'
     }
-    return get_api_handler("get", f'/api/products/{query}', params=payload)
+    request_url = urljoin(main_url, f'/api/products/{query}')
+    r = s.get(url=request_url, params=payload)
+    r.raise_for_status()
+    content_type = r.headers.get("Content-Type")
+    if "application/json" in content_type:
+        return r.json()
+    return r
 
 
 def create_order(query):
     data = {"data": {"weight": 0.5, "product": {"connect": [int(query)]}}}
-    return get_api_handler("post", "/api/orders", data=data)
+    request_url = urljoin(main_url, "/api/orders")
+    r = s.post(url=request_url, json=data)
+    r.raise_for_status()
+    content_type = r.headers.get("Content-Type")
+    if "application/json" in content_type:
+        return r.json()
+    return r
 
 
 def get_cart(chat_id):
     data = {f'filters[{chat_id}][$eq]': chat_id}
-    return get_api_handler("get", f"/api/carts", data=data)
+    request_url = urljoin(main_url, f"/api/carts")
+    r = s.get(url=request_url, json=data)
+    r.raise_for_status()
+    content_type = r.headers.get("Content-Type")
+    if "application/json" in content_type:
+        return r.json()
+    return r
 
 
 def get_or_create_cart(chat_id, order):
@@ -60,27 +97,44 @@ def get_or_create_cart(chat_id, order):
                 "orders": {"connect": [order["data"]["id"]]},
             }
         }
-        return get_api_handler("post", "/api/carts", data=data)
+        request_url = urljoin(main_url, "/api/carts")
+        r = s.post(url=request_url, json=data)
+        r.raise_for_status()
+        content_type = r.headers.get("Content-Type")
     else:
         data = {
             "data": {
                 "orders": {"connect": [order["data"]["id"]]},
             }
         }
-        return get_api_handler("put", f'/api/carts/{cart["data"][0]["id"]}', data=data)
+        request_url = urljoin(main_url,f'/api/carts/{cart["data"][0]["id"]}')
+        r = s.put(url=request_url, json=data)
+        r.raise_for_status()
+        content_type = r.headers.get("Content-Type")
+    if "application/json" in content_type:
+        return r.json()
+    return r
 
 
 def get_orders(chat_id):
     orders = []
-    carts = get_api_handler("get", "/api/carts?populate[orders][populate][0]=product")
-    for cart in carts["data"]:
-        if cart["attributes"]["chat_id"] == str(chat_id):
-            orders = cart["attributes"]["orders"]["data"]
+    request_url = urljoin(main_url, "/api/carts?populate[orders][populate][0]=product")
+    cart = s.get(url=request_url)
+    cart.raise_for_status()
+    for product in cart.json()["data"]:
+        if product["attributes"]["chat_id"] == str(chat_id):
+            orders = product["attributes"]["orders"]["data"]
     return orders
 
 
 def del_order(id_):
-    get_api_handler("del", f"/api/orders/{id_}")
+    request_url = urljoin(main_url, f"/api/orders/{id_}")
+    r = s.delete(url=request_url)
+    r.raise_for_status()
+    content_type = r.headers.get("Content-Type")
+    if "application/json" in content_type:
+        return r.json()
+    return r
 
 
 def add_user_to_cart(chat_id, users_reply, username):
@@ -91,15 +145,11 @@ def add_user_to_cart(chat_id, users_reply, username):
             "users_permissions_user": user_["id"],
         }
     }
-    return get_api_handler("put", f'/api/carts/{cart["data"][0]["id"]}', data=data)
-
-
-def get_api_handler(method, url, data=None, params=None):
-    methods = {"post": s.post, "get": s.get, "put": s.put, "del": s.delete}
-    request_url = urljoin(main_url, url)
-    r = methods[method](url=request_url, json=data, params=params)
+    request_url = urljoin(main_url, f'/api/carts/{cart["data"][0]["id"]}')
+    r = s.put(url=request_url, json=data)
     r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
         return r.json()
     return r
+
