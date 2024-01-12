@@ -1,20 +1,16 @@
 import logging
-from urllib.parse import urljoin
-
 import redis
+import requests
+from urllib.parse import urljoin
 from io import BytesIO
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from environs import Env
-
 from telegram.ext import Filters, Updater
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
+from environs import Env
 
 import handlers
-from config import settings
 
-env = Env()
-env.read_env()
 
 _database = None
 
@@ -45,7 +41,7 @@ def handle_menu(update, context):
             return handle_pay(update, context)
         if query == '/del_products':
             return handle_empty_cart(update, context)
-    products = handlers.get_products()
+    products = handlers.get_products(MAIN_URL, headers)
     keyboard = [
         [InlineKeyboardButton(
             products["data"][product]["attributes"]["title"],
@@ -64,9 +60,6 @@ def handle_menu(update, context):
             chat_id=chat_id,
             text="Please choose:",
             reply_markup=reply_markup)
-    context.bot.delete_message(
-        chat_id=chat_id,
-        message_id=message_id)
     return "HANDLE_DESCRIPTION"
 
 
@@ -77,14 +70,14 @@ def handle_description(update, context):
         return handle_cart(update, context)
     if query == '/del_products':
         return handle_empty_cart(update, context)
-    pic = handlers.get_picture(query)
+    pic = handlers.get_picture(query, MAIN_URL, headers)
     pic_url = pic["data"]["attributes"]["picture"]['data'][0]['attributes']['url']
-    request_url = urljoin(handlers.main_url, pic_url)
-    response = handlers.s.get(url=request_url)
+    request_url = urljoin(MAIN_URL, pic_url)
+    response = requests.get(url=request_url)
     response.raise_for_status()
     image_data = BytesIO(response.content)
 
-    product = handlers.get_product(query)
+    product = handlers.get_product(query, MAIN_URL, headers)
     title = product["data"]["attributes"]["title"]
     price = product["data"]["attributes"]["price"]
     description = product["data"]["attributes"]["description"]
@@ -113,9 +106,9 @@ def handle_add_to_cart(update, context):
     chat_id, message_id = get_chat_id_message_id(update, context)
     if update.callback_query:
         data = update.callback_query.data
-    order = handlers.create_order(data)
-    product = handlers.get_product(data)
-    cart = handlers.get_or_create_cart(str(chat_id), order)
+    order = handlers.create_order(data, MAIN_URL, headers)
+    product = handlers.get_product(data, MAIN_URL, headers)
+    cart = handlers.get_or_create_cart(str(chat_id), order, MAIN_URL, headers)
     query = update.callback_query
     query.answer(text=f'''{product['data']['attributes']['title']} добавлен в корзину''',
                  show_alert=True)
@@ -131,7 +124,7 @@ def handle_cart(update, context):
     if query.isdigit():
         return handle_add_to_cart(update, context)
 
-    orders = handlers.get_orders(chat_id)
+    orders = handlers.get_orders(chat_id, MAIN_URL, headers)
     message = ""
     for order in orders:
         message += "".join(
@@ -162,9 +155,9 @@ def handle_cart(update, context):
 
 def handle_empty_cart(update, context):
     chat_id, message_id = get_chat_id_message_id(update, context)
-    orders = handlers.get_orders(chat_id)
+    orders = handlers.get_orders(chat_id, MAIN_URL, headers)
     for order in orders:
-        handlers.del_order(order["id"])
+        handlers.del_order(order["id"], MAIN_URL, headers)
     keyboard = [
         [InlineKeyboardButton(
             "В меню",
@@ -194,9 +187,14 @@ def handle_pay(update, context):
 def handle_email(update, context):
     chat_id, message_id = get_chat_id_message_id(update, context)
     username = update.effective_user.username
-    users_reply = update.message.text
+    if update.message:
+        users_reply = update.message.text
+    else:
+        users_reply = update.callback_query.data
     cart = handlers.add_user_to_cart(
         chat_id,
+        MAIN_URL,
+        headers,
         users_reply,
         username)
     update.message.reply_text("Пользователь сохранен в CMS.")
@@ -246,12 +244,20 @@ def get_database_connection():
 
 
 if __name__ == "__main__":
+    env = Env()
+    env.read_env()
+    BOT_TOKEN = env('BOT_TOKEN')
+    API_TOKEN = env('API_TOKEN')
+    MAIN_URL = env('MAIN_URL')
+
+    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+
     logging.basicConfig(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO,
         filename='fish_bot.log'
     )
-    updater = Updater(settings.BOT_TOKEN)
+    updater = Updater(BOT_TOKEN)
     dispatcher = updater.dispatcher
     dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
     dispatcher.add_handler(MessageHandler(Filters.text, handle_users_reply))

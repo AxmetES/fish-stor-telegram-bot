@@ -2,17 +2,11 @@ import requests
 
 from urllib.parse import urljoin
 
-from config import settings
 
-s = requests.Session()
-s.headers.update({"Authorization": f"Bearer {settings.API_TOKEN}"})
-main_url = settings.MAIN_URL
-
-
-def get_or_create_user(chat_id, users_reply, username):
+def get_or_create_user(chat_id, main_url, headers, users_reply, username):
     data = {f'filters[{chat_id}][$eq]': '{chat_id}'}
     request_url = urljoin(main_url, f"/api/users")
-    r = s.get(url=request_url, json=data)
+    r = requests.get(url=request_url, json=data, headers=headers)
     r.raise_for_status()
     if r:
         return r.json()[0]
@@ -25,7 +19,7 @@ def get_or_create_user(chat_id, users_reply, username):
             "password": "123456",
         }
         request_url = urljoin(main_url, "/api/users")
-        r = s.post(url=request_url, json=data)
+        r = requests.post(url=request_url, json=data, headers=headers)
         r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
@@ -33,9 +27,9 @@ def get_or_create_user(chat_id, users_reply, username):
     return r
 
 
-def get_products():
+def get_products(main_url, headers):
     request_url = urljoin(main_url, "/api/products")
-    r = s.get(url=request_url)
+    r = requests.get(url=request_url, headers=headers)
     r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
@@ -43,9 +37,9 @@ def get_products():
     return r
 
 
-def get_product(query):
+def get_product(query, main_url, headers):
     request_url = urljoin(main_url, f"/api/products/{query}")
-    r = s.get(url=request_url)
+    r = requests.get(url=request_url, headers=headers)
     r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
@@ -53,23 +47,22 @@ def get_product(query):
     return r
 
 
-def get_picture(query):
+def get_picture(query, main_url, headers):
     payload = {
         'populate': 'picture'
     }
     request_url = urljoin(main_url, f'/api/products/{query}')
-    r = s.get(url=request_url, params=payload)
+    r = requests.get(url=request_url, params=payload, headers=headers)
     r.raise_for_status()
-    content_type = r.headers.get("Content-Type")
-    if "application/json" in content_type:
+    if "application/json" in r.headers.get("Content-Type"):
         return r.json()
     return r
 
 
-def create_order(query):
+def create_order(query, main_url, headers):
     data = {"data": {"weight": 0.5, "product": {"connect": [int(query)]}}}
     request_url = urljoin(main_url, "/api/orders")
-    r = s.post(url=request_url, json=data)
+    r = requests.post(url=request_url, json=data, headers=headers)
     r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
@@ -77,10 +70,10 @@ def create_order(query):
     return r
 
 
-def get_cart(chat_id):
+def get_cart(chat_id, main_url, headers):
     data = {f'filters[{chat_id}][$eq]': chat_id}
     request_url = urljoin(main_url, f"/api/carts")
-    r = s.get(url=request_url, json=data)
+    r = requests.get(url=request_url, json=data, headers=headers)
     r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
@@ -88,8 +81,8 @@ def get_cart(chat_id):
     return r
 
 
-def get_or_create_cart(chat_id, order):
-    cart = get_cart(chat_id)
+def get_or_create_cart(chat_id, order, main_url, headers):
+    cart = get_cart(chat_id, main_url, headers=headers)
     if not cart["data"]:
         data = {
             "data": {
@@ -98,7 +91,7 @@ def get_or_create_cart(chat_id, order):
             }
         }
         request_url = urljoin(main_url, "/api/carts")
-        r = s.post(url=request_url, json=data)
+        r = requests.post(url=request_url, json=data, headers=headers)
         r.raise_for_status()
         content_type = r.headers.get("Content-Type")
     else:
@@ -107,8 +100,8 @@ def get_or_create_cart(chat_id, order):
                 "orders": {"connect": [order["data"]["id"]]},
             }
         }
-        request_url = urljoin(main_url,f'/api/carts/{cart["data"][0]["id"]}')
-        r = s.put(url=request_url, json=data)
+        request_url = urljoin(main_url, f'/api/carts/{cart["data"][0]["id"]}')
+        r = requests.put(url=request_url, json=data, headers=headers)
         r.raise_for_status()
         content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
@@ -116,10 +109,10 @@ def get_or_create_cart(chat_id, order):
     return r
 
 
-def get_orders(chat_id):
+def get_orders(chat_id, main_url, headers):
     orders = []
     request_url = urljoin(main_url, "/api/carts?populate[orders][populate][0]=product")
-    cart = s.get(url=request_url)
+    cart = requests.get(url=request_url, headers=headers)
     cart.raise_for_status()
     for product in cart.json()["data"]:
         if product["attributes"]["chat_id"] == str(chat_id):
@@ -127,9 +120,9 @@ def get_orders(chat_id):
     return orders
 
 
-def del_order(id_):
+def del_order(id_, main_url, headers):
     request_url = urljoin(main_url, f"/api/orders/{id_}")
-    r = s.delete(url=request_url)
+    r = requests.delete(url=request_url, headers=headers)
     r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
@@ -137,19 +130,18 @@ def del_order(id_):
     return r
 
 
-def add_user_to_cart(chat_id, users_reply, username):
-    user_ = get_or_create_user(chat_id, users_reply, username)
-    cart = get_cart(chat_id)
+def add_user_to_cart(chat_id, main_url, headers, users_reply, username):
+    user_ = get_or_create_user(chat_id, main_url, headers, users_reply, username)
+    cart = get_cart(chat_id, main_url, headers)
     data = {
         "data": {
             "users_permissions_user": user_["id"],
         }
     }
     request_url = urljoin(main_url, f'/api/carts/{cart["data"][0]["id"]}')
-    r = s.put(url=request_url, json=data)
+    r = requests.put(url=request_url, json=data, headers=headers)
     r.raise_for_status()
     content_type = r.headers.get("Content-Type")
     if "application/json" in content_type:
         return r.json()
     return r
-
