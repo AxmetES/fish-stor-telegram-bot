@@ -41,7 +41,7 @@ def handle_menu(update, context):
             return handle_pay(update, context)
         if query == '/del_products':
             return handle_empty_cart(update, context)
-    products = handlers.get_products(MAIN_URL, headers)
+    products = handlers.get_products(main_url, headers)
     keyboard = [
         [InlineKeyboardButton(
             products["data"][product]["attributes"]["title"],
@@ -70,14 +70,14 @@ def handle_description(update, context):
         return handle_cart(update, context)
     if query == '/del_products':
         return handle_empty_cart(update, context)
-    pic = handlers.get_picture(query, MAIN_URL, headers)
+    pic = handlers.get_picture(query, main_url, headers)
     pic_url = pic["data"]["attributes"]["picture"]['data'][0]['attributes']['url']
-    request_url = urljoin(MAIN_URL, pic_url)
+    request_url = urljoin(main_url, pic_url)
     response = requests.get(url=request_url)
     response.raise_for_status()
     image_data = BytesIO(response.content)
 
-    product = handlers.get_product(query, MAIN_URL, headers)
+    product = handlers.get_product(query, main_url, headers)
     title = product["data"]["attributes"]["title"]
     price = product["data"]["attributes"]["price"]
     description = product["data"]["attributes"]["description"]
@@ -106,9 +106,9 @@ def handle_add_to_cart(update, context):
     chat_id, message_id = get_chat_id_message_id(update, context)
     if update.callback_query:
         data = update.callback_query.data
-    order = handlers.create_order(data, MAIN_URL, headers)
-    product = handlers.get_product(data, MAIN_URL, headers)
-    cart = handlers.get_or_create_cart(str(chat_id), order, MAIN_URL, headers)
+    order = handlers.create_order(data, main_url, headers)
+    product = handlers.get_product(data, main_url, headers)
+    cart = handlers.get_or_create_cart(str(chat_id), order, main_url, headers)
     query = update.callback_query
     query.answer(text=f'''{product['data']['attributes']['title']} добавлен в корзину''',
                  show_alert=True)
@@ -124,7 +124,7 @@ def handle_cart(update, context):
     if query.isdigit():
         return handle_add_to_cart(update, context)
 
-    orders = handlers.get_orders(chat_id, MAIN_URL, headers)
+    orders = handlers.get_orders(chat_id, main_url, headers)
     message = ""
     for order in orders:
         message += "".join(
@@ -155,9 +155,9 @@ def handle_cart(update, context):
 
 def handle_empty_cart(update, context):
     chat_id, message_id = get_chat_id_message_id(update, context)
-    orders = handlers.get_orders(chat_id, MAIN_URL, headers)
+    orders = handlers.get_orders(chat_id, main_url, headers)
     for order in orders:
-        handlers.del_order(order["id"], MAIN_URL, headers)
+        handlers.del_order(order["id"], main_url, headers)
     keyboard = [
         [InlineKeyboardButton(
             "В меню",
@@ -193,7 +193,7 @@ def handle_email(update, context):
         users_reply = update.callback_query.data
     cart = handlers.add_user_to_cart(
         chat_id,
-        MAIN_URL,
+        main_url,
         headers,
         users_reply,
         username)
@@ -246,18 +246,18 @@ def get_database_connection():
 if __name__ == "__main__":
     env = Env()
     env.read_env()
-    BOT_TOKEN = env('BOT_TOKEN')
-    API_TOKEN = env('API_TOKEN')
-    MAIN_URL = env('MAIN_URL')
+    bot_token = env('BOT_TOKEN')
+    api_token = env('API_TOKEN')
+    main_url = env('MAIN_URL')
 
-    headers = {"Authorization": f"Bearer {API_TOKEN}"}
+    headers = {"Authorization": f"Bearer {api_token}"}
 
     logging.basicConfig(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO,
         filename='fish_bot.log'
     )
-    updater = Updater(BOT_TOKEN)
+    updater = Updater(bot_token)
     dispatcher = updater.dispatcher
     dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
     dispatcher.add_handler(MessageHandler(Filters.text, handle_users_reply))
