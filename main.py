@@ -1,16 +1,12 @@
 import logging
 import redis
-import requests
-from urllib.parse import urljoin
-from io import BytesIO
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Filters, Updater
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler
 from environs import Env
 
-import handlers
-
+from strapi import Strapi
 
 _database = None
 
@@ -32,6 +28,7 @@ def start(update, context):
 
 
 def handle_menu(update, context):
+    strapi = context.bot_data['strapi']
     chat_id, message_id = get_chat_id_message_id(update, context)
     if update.callback_query:
         query = update.callback_query.data
@@ -41,7 +38,7 @@ def handle_menu(update, context):
             return handle_pay(update, context)
         if query == '/del_products':
             return handle_empty_cart(update, context)
-    products = handlers.get_products(main_url, headers)
+    products = strapi.get_products()
     keyboard = [
         [InlineKeyboardButton(
             products["data"][product]["attributes"]["title"],
@@ -64,20 +61,17 @@ def handle_menu(update, context):
 
 
 def handle_description(update, context):
+    strapi = context.bot_data['strapi']
     chat_id, message_id = get_chat_id_message_id(update, context)
     query = update.callback_query.data
     if query == '/go_cart':
         return handle_cart(update, context)
     if query == '/del_products':
         return handle_empty_cart(update, context)
-    pic = handlers.get_picture(query, main_url, headers)
+    pic = strapi.get_picture(query)
     pic_url = pic["data"]["attributes"]["picture"]['data'][0]['attributes']['url']
-    request_url = urljoin(main_url, pic_url)
-    response = requests.get(url=request_url)
-    response.raise_for_status()
-    image_data = BytesIO(response.content)
-
-    product = handlers.get_product(query, main_url, headers)
+    image_data = strapi.get_img(pic_url)
+    product = strapi.get_product(query)
     title = product["data"]["attributes"]["title"]
     price = product["data"]["attributes"]["price"]
     description = product["data"]["attributes"]["description"]
@@ -103,12 +97,13 @@ def handle_description(update, context):
 
 
 def handle_add_to_cart(update, context):
+    strapi = context.bot_data['strapi']
     chat_id, message_id = get_chat_id_message_id(update, context)
     if update.callback_query:
         data = update.callback_query.data
-    order = handlers.create_order(data, main_url, headers)
-    product = handlers.get_product(data, main_url, headers)
-    cart = handlers.get_or_create_cart(str(chat_id), order, main_url, headers)
+    order = strapi.create_order(data)
+    product = strapi.get_product(data)
+    cart = strapi.get_or_create_cart(str(chat_id), order)
     query = update.callback_query
     query.answer(text=f'''{product['data']['attributes']['title']} добавлен в корзину''',
                  show_alert=True)
@@ -119,12 +114,13 @@ def handle_add_to_cart(update, context):
 
 
 def handle_cart(update, context):
+    strapi = context.bot_data['strapi']
     chat_id, message_id = get_chat_id_message_id(update, context)
     query = update.callback_query.data
     if query.isdigit():
         return handle_add_to_cart(update, context)
 
-    orders = handlers.get_orders(chat_id, main_url, headers)
+    orders = strapi.get_orders(chat_id)
     message = ""
     for order in orders:
         message += "".join(
@@ -154,10 +150,11 @@ def handle_cart(update, context):
 
 
 def handle_empty_cart(update, context):
+    strapi = context.bot_data['strapi']
     chat_id, message_id = get_chat_id_message_id(update, context)
-    orders = handlers.get_orders(chat_id, main_url, headers)
+    orders = strapi.get_orders(chat_id)
     for order in orders:
-        handlers.del_order(order["id"], main_url, headers)
+        strapi.del_order(order["id"])
     keyboard = [
         [InlineKeyboardButton(
             "В меню",
@@ -185,16 +182,15 @@ def handle_pay(update, context):
 
 
 def handle_email(update, context):
+    strapi = context.bot_data['strapi']
     chat_id, message_id = get_chat_id_message_id(update, context)
     username = update.effective_user.username
     if update.message:
         users_reply = update.message.text
     else:
         users_reply = update.callback_query.data
-    cart = handlers.add_user_to_cart(
+    cart = strapi.add_user_to_cart(
         chat_id,
-        main_url,
-        headers,
         users_reply,
         username)
     update.message.reply_text("Пользователь сохранен в CMS.")
@@ -243,14 +239,15 @@ def get_database_connection():
     return _database
 
 
-if __name__ == "__main__":
+def main():
     env = Env()
     env.read_env()
     bot_token = env('BOT_TOKEN')
     api_token = env('API_TOKEN')
     main_url = env('MAIN_URL')
-
     headers = {"Authorization": f"Bearer {api_token}"}
+
+    start = Strapi(main_url, headers)
 
     logging.basicConfig(
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -259,8 +256,14 @@ if __name__ == "__main__":
     )
     updater = Updater(bot_token)
     dispatcher = updater.dispatcher
+    dispatcher.bot_data['strapi'] = start
     dispatcher.add_handler(CallbackQueryHandler(handle_users_reply))
     dispatcher.add_handler(MessageHandler(Filters.text, handle_users_reply))
     dispatcher.add_handler(CommandHandler("start", handle_users_reply))
     updater.start_polling()
     updater.idle()
+
+
+if __name__ == "__main__":
+    main()
+
